@@ -31,3 +31,4 @@ This is licensed under SYNTHAI-LABS OpenSource License
 
 > TBD
 > People, research paper, so on...
+> https://en.wikipedia.org/wiki/Tf%E2%80%93idf
