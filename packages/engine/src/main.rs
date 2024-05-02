@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::result::Result;
+use std::str;
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 
@@ -41,26 +42,31 @@ impl<'a> Lexer<'a> {
         self.chop(n)
     }
 
-    fn next_token(&mut self) -> Option<&'a [char]> {
+    fn next_token(&mut self) -> Option<String> {
         self.trim_left();
         if self.content.is_empty() {
             return None;
         }
 
         if self.content[0].is_numeric() {
-            return Some(self.chop_while(|x| x.is_numeric()));
+            return Some(self.chop_while(|x| x.is_numeric()).iter().collect());
         }
 
         if self.content[0].is_alphabetic() {
-            return Some(self.chop_while(|x| x.is_alphanumeric()));
+            return Some(
+                self.chop_while(|x| x.is_alphanumeric())
+                    .iter()
+                    .map(|x| x.to_ascii_uppercase())
+                    .collect(),
+            );
         }
 
-        return Some(self.chop(1));
+        return Some(self.chop(1).iter().collect());
     }
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = &'a [char];
+    type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_token()
@@ -171,11 +177,7 @@ fn tf_index_of_folder(dir_path: &Path, tf_index: &mut TermFreqIndex) -> Result<(
 
         let mut tf = TermFreq::new();
 
-        for token in Lexer::new(&content) {
-            let term = token
-                .iter()
-                .map(|x| x.to_ascii_uppercase())
-                .collect::<String>();
+        for term in Lexer::new(&content) {
             if let Some(freq) = tf.get_mut(&term) {
                 *freq += 1;
             } else {
@@ -222,7 +224,7 @@ fn serve_404(request: Request) -> Result<(), ()> {
         })
 }
 
-fn serve_request(request: Request) -> Result<(), ()> {
+fn serve_request(mut request: Request) -> Result<(), ()> {
     println!(
         "INFO: recieved request! method {:?}, url {:?}",
         request.method(),
@@ -230,6 +232,25 @@ fn serve_request(request: Request) -> Result<(), ()> {
     );
 
     match (request.method(), request.url()) {
+        (Method::Post, "/api/search") => {
+            let mut buf = Vec::new();
+            request.as_reader().read_to_end(&mut buf);
+            let body = str::from_utf8(&buf)
+                .map_err(|err| {
+                    eprintln!("ERROR: could not interpret body as UTF8 string: {err}");
+                })?
+                .chars()
+                .collect::<Vec<_>>();
+
+            for token in Lexer::new(&body) {
+                println!("{token}");
+            }
+            // println!("Search: {body}");
+            request.respond(Response::from_string("ok")).map_err(|err| {
+                eprintln!("ERROR: {err}");
+            });
+        }
+
         (Method::Get, "/index.js") => {
             serve_static_file(
                 request,
