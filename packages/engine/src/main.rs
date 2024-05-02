@@ -264,7 +264,8 @@ fn serve_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), (
 
             result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
             result.reverse();
-            for (path, rank) in result {
+            let TOP_N_RESULTS_TO_RETURN = 10;
+            for (path, rank) in result.iter().take(TOP_N_RESULTS_TO_RETURN) {
                 println!("{path} => {rank}", path = path.display())
             }
 
