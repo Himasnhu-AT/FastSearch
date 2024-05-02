@@ -7,6 +7,8 @@ use std::result::Result;
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 
+use tiny_http::{Response, Server};
+
 struct Lexer<'a> {
     content: &'a [char],
 }
@@ -194,7 +196,7 @@ fn usage(program: &str) {
         "    index <folder>         index the <folder> and save the index to index.json file"
     );
     eprintln!("    search <index-file>    check how many documents are indexed in the file (searching is not implemented yet)");
-    eprintln!("    serve                  start local http server along with webclient")
+    eprintln!("    serve [adress]         start local http server along with webclient")
 }
 
 fn entry() -> Result<(), ()> {
@@ -226,6 +228,25 @@ fn entry() -> Result<(), ()> {
             check_index(&index_path)?;
         }
         "serve" => {
+            let address = args.next().unwrap_or("127.0.0.1:8080".to_string());
+            let server = Server::http(&address).map_err(|err| {
+                eprintln!("ERROR: Couldn't start server at {address}");
+            })?;
+
+            println!("INFO: listening at http://{address}");
+
+            for request in server.incoming_requests() {
+                println!(
+                    "INFO: recieved request! method {:?}, url {:?}",
+                    request.method(),
+                    request.url(),
+                );
+                let response = Response::from_string("Hello, world");
+                request.respond(response).unwrap_or_else(|err| {
+                    eprintln!("ERROR: could not server request {err}");
+                });
+            }
+
             todo!("Implement serve functionality");
         }
         _ => {
