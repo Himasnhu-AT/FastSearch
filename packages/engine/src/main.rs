@@ -7,7 +7,7 @@ use std::result::Result;
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 
-use tiny_http::{Response, Server};
+use tiny_http::{Header, Request, Response, Server};
 
 struct Lexer<'a> {
     content: &'a [char],
@@ -199,6 +199,29 @@ fn usage(program: &str) {
     eprintln!("    serve [adress]         start local http server along with webclient")
 }
 
+fn server_request(request: Request) -> Result<(), ()> {
+    println!(
+        "INFO: recieved request! method {:?}, url {:?}",
+        request.method(),
+        request.url(),
+    );
+
+    let content_type_text_html = Header::from_bytes("Content-Type", "text/html; charset-utf-8")
+        .expect("That we didn't put any garbage in the headers");
+
+    let index_html_path = "./webclient/index.html";
+    let index_html_file = File::open(index_html_path).map_err(|err| {
+        println!("ERROR: Could not serve file {index_html_path}: {err}");
+    })?;
+
+    let response = Response::from_file(index_html_file).with_header(content_type_text_html);
+
+    request.respond(response).map_err(|err| {
+        eprintln!("ERROR: could not server request {err}");
+    })?;
+
+    Ok(())
+}
 fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
@@ -236,15 +259,7 @@ fn entry() -> Result<(), ()> {
             println!("INFO: listening at http://{address}");
 
             for request in server.incoming_requests() {
-                println!(
-                    "INFO: recieved request! method {:?}, url {:?}",
-                    request.method(),
-                    request.url(),
-                );
-                let response = Response::from_string("Hello, world");
-                request.respond(response).unwrap_or_else(|err| {
-                    eprintln!("ERROR: could not server request {err}");
-                });
+                server_request(request);
             }
 
             todo!("Implement serve functionality");
