@@ -195,10 +195,10 @@ fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
     eprintln!(
-        "    index <folder>         index the <folder> and save the index to index.json file"
+        "    index <folder>                index the <folder> and save the index to index.json file"
     );
-    eprintln!("    search <index-file>    check how many documents are indexed in the file (searching is not implemented yet)");
-    eprintln!("    serve [adress]         start local http server along with webclient")
+    eprintln!("    search <index-file>          check how many documents are indexed in the file (searching is not implemented yet)");
+    eprintln!("    serve <index-file> [adress]  start local http server along with webclient")
 }
 
 fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
@@ -224,7 +224,18 @@ fn serve_404(request: Request) -> Result<(), ()> {
         })
 }
 
-fn serve_request(mut request: Request) -> Result<(), ()> {
+fn tf(t: &str, d: &TermFreq) -> f32 {
+    d.get(t).cloned().unwrap_or(0) as f32 / d.iter().map(|(_, f)| *f).sum::<usize>() as f32
+}
+
+fn idf(t: &str, d: &TermFreqIndex) -> f32 {
+    let N = d.len() as f32;
+    let M = d.values().filter(|tf| tf.contains_key(t)).count().max(1) as f32;
+    // println!("{N} {M}");
+    return (N / M).log10();
+}
+
+fn serve_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), ()> {
     println!(
         "INFO: recieved request! method {:?}, url {:?}",
         request.method(),
@@ -242,9 +253,21 @@ fn serve_request(mut request: Request) -> Result<(), ()> {
                 .chars()
                 .collect::<Vec<_>>();
 
-            for token in Lexer::new(&body) {
-                println!("{token}");
+            let mut result = Vec::<(&Path, f32)>::new();
+            for (path, tf_table) in tf_index {
+                let mut rank = 0f32;
+                for token in Lexer::new(&body) {
+                    rank += tf(&token, tf_table) * idf(&token, &tf_index);
+                }
+                result.push((path, rank))
             }
+
+            result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
+            result.reverse();
+            for (path, rank) in result {
+                println!("{path} => {rank}", path = path.display())
+            }
+
             // println!("Search: {body}");
             request.respond(Response::from_string("ok")).map_err(|err| {
                 eprintln!("ERROR: {err}");
@@ -273,6 +296,7 @@ fn serve_request(mut request: Request) -> Result<(), ()> {
 
     Ok(())
 }
+
 fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
@@ -302,6 +326,19 @@ fn entry() -> Result<(), ()> {
             check_index(&index_path)?;
         }
         "serve" => {
+            let index_path = args.next().ok_or_else(|| {
+                usage(&program);
+                eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
+            })?;
+
+            let index_file = File::open(&index_path).map_err(|err| {
+                eprintln!("ERROR: could not open index file {index_path}: {err}");
+            })?;
+
+            let tf_index: TermFreqIndex = serde_json::from_reader(index_file).map_err(|err| {
+                eprintln!("ERROR: could not parse index file {index_path}: {err}");
+            })?;
+
             let address = args.next().unwrap_or("127.0.0.1:8080".to_string());
             let server = Server::http(&address).map_err(|err| {
                 eprintln!("ERROR: Couldn't start server at {address}");
@@ -310,7 +347,7 @@ fn entry() -> Result<(), ()> {
             println!("INFO: listening at http://{address}");
 
             for request in server.incoming_requests() {
-                serve_request(request);
+                serve_request(&tf_index, request);
             }
 
             todo!("Implement serve functionality");
