@@ -7,7 +7,7 @@ use std::result::Result;
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 
-use tiny_http::{Header, Request, Response, Server};
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 struct Lexer<'a> {
     content: &'a [char],
@@ -199,26 +199,56 @@ fn usage(program: &str) {
     eprintln!("    serve [adress]         start local http server along with webclient")
 }
 
-fn server_request(request: Request) -> Result<(), ()> {
+fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
+    let content_type_header = Header::from_bytes("Content-Type", content_type)
+        .expect("That we didn't put any garbage in the headers");
+
+    let file = File::open(file_path).map_err(|err| {
+        println!("ERROR: Could not serve file {file_path}: {err}");
+    })?;
+
+    let response = Response::from_file(file).with_header(content_type_header);
+
+    request.respond(response).map_err(|err| {
+        eprintln!("ERROR: could not server request {err}");
+    })
+}
+
+fn serve_404(request: Request) -> Result<(), ()> {
+    request
+        .respond(Response::from_string("404 not found").with_status_code(StatusCode(404)))
+        .map_err(|err| {
+            eprintln!("ERROR: could not server request {err}");
+        })
+}
+
+fn serve_request(request: Request) -> Result<(), ()> {
     println!(
         "INFO: recieved request! method {:?}, url {:?}",
         request.method(),
         request.url(),
     );
 
-    let content_type_text_html = Header::from_bytes("Content-Type", "text/html; charset-utf-8")
-        .expect("That we didn't put any garbage in the headers");
+    match (request.method(), request.url()) {
+        (Method::Get, "/index.js") => {
+            serve_static_file(
+                request,
+                "./webclient/index.js",
+                "text/javascript; charset-utf-8",
+            )?;
+        }
 
-    let index_html_path = "./webclient/index.html";
-    let index_html_file = File::open(index_html_path).map_err(|err| {
-        println!("ERROR: Could not serve file {index_html_path}: {err}");
-    })?;
-
-    let response = Response::from_file(index_html_file).with_header(content_type_text_html);
-
-    request.respond(response).map_err(|err| {
-        eprintln!("ERROR: could not server request {err}");
-    })?;
+        (Method::Get, "/") | (Method::Get, "/index.html") => {
+            serve_static_file(
+                request,
+                "./webclient/index.html",
+                "text/html; charset-utf-8",
+            )?;
+        }
+        _ => {
+            serve_404(request);
+        }
+    }
 
     Ok(())
 }
@@ -259,7 +289,7 @@ fn entry() -> Result<(), ()> {
             println!("INFO: listening at http://{address}");
 
             for request in server.incoming_requests() {
-                server_request(request);
+                serve_request(request);
             }
 
             todo!("Implement serve functionality");
