@@ -191,111 +191,103 @@ fn tf_index_of_folder(dir_path: &Path, tf_index: &mut TermFreqIndex) -> Result<(
     Ok(())
 }
 
+fn tf(t: &str, d: &TermFreq) -> f32 {
+    let a = d.get(t).cloned().unwrap_or(0) as f32;
+    let b = d.iter().map(|(_, f)| *f).sum::<usize>() as f32;
+    a / b
+}
+
+fn idf(t: &str, d: &TermFreqIndex) -> f32 {
+    let n = d.len() as f32;
+    let m = d.values().filter(|tf| tf.contains_key(t)).count().max(1) as f32;
+    return (n / m).log10();
+}
+
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
-    eprintln!(
-        "    index <folder>                index the <folder> and save the index to index.json file"
-    );
-    eprintln!("    search <index-file>          check how many documents are indexed in the file (searching is not implemented yet)");
-    eprintln!("    serve <index-file> [adress]  start local http server along with webclient")
+    eprintln!("    index <folder>                  index the <folder> and save the index to index.json file");
+    eprintln!("    search <index-file>             check how many documents are indexed in the file (searching is not implemented yet)");
+    eprintln!("    serve <index-file> [address]    start local HTTP server with Web Interface");
 }
 
 fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
     let content_type_header = Header::from_bytes("Content-Type", content_type)
         .expect("That we didn't put any garbage in the headers");
-
     let file = File::open(file_path).map_err(|err| {
-        println!("ERROR: Could not serve file {file_path}: {err}");
+        eprintln!("ERROR: could not serve file {file_path}: {err}");
     })?;
-
     let response = Response::from_file(file).with_header(content_type_header);
-
     request.respond(response).map_err(|err| {
-        eprintln!("ERROR: could not server request {err}");
+        eprintln!("ERROR: could not serve static file {file_path}: {err}");
     })
 }
 
 fn serve_404(request: Request) -> Result<(), ()> {
     request
-        .respond(Response::from_string("404 not found").with_status_code(StatusCode(404)))
+        .respond(Response::from_string("404").with_status_code(StatusCode(404)))
         .map_err(|err| {
-            eprintln!("ERROR: could not server request {err}");
+            eprintln!("ERROR: could not serve a request: {err}");
         })
 }
 
-fn tf(t: &str, d: &TermFreq) -> f32 {
-    d.get(t).cloned().unwrap_or(0) as f32 / d.iter().map(|(_, f)| *f).sum::<usize>() as f32
+fn serve_api_search(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), ()> {
+    let mut buf = Vec::new();
+    request.as_reader().read_to_end(&mut buf).map_err(|err| {
+        eprintln!("ERROR: could not read the body of the request: {err}");
+    })?;
+    let body = str::from_utf8(&buf)
+        .map_err(|err| {
+            eprintln!("ERROR: could not interpret body as UTF-8 string: {err}");
+        })?
+        .chars()
+        .collect::<Vec<_>>();
+
+    let mut result = Vec::<(&Path, f32)>::new();
+    for (path, tf_table) in tf_index {
+        let mut rank = 0f32;
+        for token in Lexer::new(&body) {
+            rank += tf(&token, &tf_table) * idf(&token, &tf_index);
+        }
+        result.push((path, rank));
+    }
+    result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
+    result.reverse();
+
+    let json =
+        serde_json::to_string(&result.iter().take(20).collect::<Vec<_>>()).map_err(|err| {
+            eprintln!("ERROR: could not convert search results to JSON: {err}");
+        })?;
+
+    let content_type_header = Header::from_bytes("Content-Type", "application/json")
+        .expect("That we didn't put any garbage in the headers");
+    let response = Response::from_string(&json).with_header(content_type_header);
+    request.respond(response).map_err(|err| {
+        eprintln!("ERROR: could not serve a request {err}");
+    })
 }
 
-fn idf(t: &str, d: &TermFreqIndex) -> f32 {
-    let N = d.len() as f32;
-    let M = d.values().filter(|tf| tf.contains_key(t)).count().max(1) as f32;
-    // println!("{N} {M}");
-    return (N / M).log10();
-}
-
-fn serve_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), ()> {
+fn serve_request(tf_index: &TermFreqIndex, request: Request) -> Result<(), ()> {
     println!(
-        "INFO: recieved request! method {:?}, url {:?}",
+        "INFO: received request! method: {:?}, url: {:?}",
         request.method(),
-        request.url(),
+        request.url()
     );
 
     match (request.method(), request.url()) {
-        (Method::Post, "/api/search") => {
-            let mut buf = Vec::new();
-            request.as_reader().read_to_end(&mut buf);
-            let body = str::from_utf8(&buf)
-                .map_err(|err| {
-                    eprintln!("ERROR: could not interpret body as UTF8 string: {err}");
-                })?
-                .chars()
-                .collect::<Vec<_>>();
-
-            let mut result = Vec::<(&Path, f32)>::new();
-            for (path, tf_table) in tf_index {
-                let mut rank = 0f32;
-                for token in Lexer::new(&body) {
-                    rank += tf(&token, tf_table) * idf(&token, &tf_index);
-                }
-                result.push((path, rank))
-            }
-
-            result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
-            result.reverse();
-            let TOP_N_RESULTS_TO_RETURN = 10;
-            for (path, rank) in result.iter().take(TOP_N_RESULTS_TO_RETURN) {
-                println!("{path} => {rank}", path = path.display())
-            }
-
-            // println!("Search: {body}");
-            request.respond(Response::from_string("ok")).map_err(|err| {
-                eprintln!("ERROR: {err}");
-            });
-        }
-
-        (Method::Get, "/index.js") => {
-            serve_static_file(
-                request,
-                "./webclient/index.js",
-                "text/javascript; charset-utf-8",
-            )?;
-        }
-
-        (Method::Get, "/") | (Method::Get, "/index.html") => {
-            serve_static_file(
-                request,
-                "./webclient/index.html",
-                "text/html; charset-utf-8",
-            )?;
-        }
-        _ => {
-            serve_404(request);
-        }
+        (Method::Post, "/api/search") => serve_api_search(tf_index, request),
+        (Method::Get, "/index.js") => serve_static_file(
+            request,
+            "./webclient/index.js",
+            "text/javascript; charset=utf-8",
+        ),
+        (Method::Get, "/") | (Method::Get, "/index.html") => serve_static_file(
+            request,
+            "./webclient/index.html",
+            "text/html; charset=utf-8",
+        ),
+        _ => serve_404(request),
     }
-
-    Ok(())
 }
 
 fn entry() -> Result<(), ()> {
@@ -341,17 +333,17 @@ fn entry() -> Result<(), ()> {
             })?;
 
             let address = args.next().unwrap_or("127.0.0.1:8080".to_string());
+
             let server = Server::http(&address).map_err(|err| {
-                eprintln!("ERROR: Couldn't start server at {address}");
+                eprintln!("ERROR: could not start HTTP server at {address}: {err}");
             })?;
 
-            println!("INFO: listening at http://{address}");
+            println!("INFO: listening at http://{address}/");
 
             for request in server.incoming_requests() {
-                serve_request(&tf_index, request);
+                // TODO: serve custom 500 in case of an error
+                serve_request(&tf_index, request).ok();
             }
-
-            todo!("Implement serve functionality");
         }
         _ => {
             usage(&program);
