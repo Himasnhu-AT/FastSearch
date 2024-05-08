@@ -11,8 +11,6 @@ time ./target/debug/engine index ./docs.gl
 time ./target/release/engine index ./docs.gl
 ```
 
-### V0.0.1-beta
-
 <!--  Template:
 
 | User Time | System Time | CPU Usage | Total Time |
@@ -20,6 +18,30 @@ time ./target/release/engine index ./docs.gl
 | 4.14s     | 10.69s      | 97%       | 15.222     |
 
 -->
+
+### V0.0.2-beta
+
+##### debug:
+
+user 8.84s system 93% cpu 13.751 total
+
+| User Time | System Time | CPU Usage | Total Time |
+| --------- | ----------- | --------- | ---------- |
+| 8.08s     | 8.78s       | 95%       | 17.614     |
+
+##### release:
+
+| User Time | System Time | CPU Usage | Total Time |
+| --------- | ----------- | --------- | ---------- |
+| 3.93s     | 8.67s       | 93%       | 12.885     |
+
+###### Serve time:
+
+| debug | release |
+| ----- | ------- |
+| 140ms | 14ms    |
+
+### V0.0.1-beta
 
 ##### debug:
 
@@ -32,3 +54,9 @@ time ./target/release/engine index ./docs.gl
 | User Time | System Time | CPU Usage | Total Time |
 | --------- | ----------- | --------- | ---------- |
 | 4.14s     | 10.69s      | 97%       | 15.222     |
+
+###### Serve time:
+
+| debug | release |
+| ----- | ------- |
+| 200ms | 150ms   |
