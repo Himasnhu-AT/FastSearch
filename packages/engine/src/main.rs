@@ -1,5 +1,6 @@
 use std::env;
 use std::fs::{self, File};
+use std::io::{BufReader, BufWriter};
 use std::path::Path;
 use std::process::ExitCode;
 use std::result::Result;
@@ -46,7 +47,7 @@ fn save_tf_index(tf_index: &TermFreqIndex, index_path: &str) -> Result<(), ()> {
         eprintln!("ERROR: could not create index file {index_path}: {err}");
     })?;
 
-    serde_json::to_writer(index_file, &tf_index).map_err(|err| {
+    serde_json::to_writer(BufWriter::new(index_file), &tf_index).map_err(|err| {
         eprintln!("ERROR: could not serialize index into file {index_path}: {err}");
     })?;
 
