@@ -37,9 +37,19 @@ user 8.84s system 93% cpu 13.751 total
 
 ###### Serve time:
 
-| debug | release |
-| ----- | ------- |
-| 140ms | 14ms    |
+> [!NOTE] > _Serve time is the time taken to search for a term in the index_
+
+- **LATEST** After caching `TF` calculation:
+
+  > | debug | release |
+  > | ----- | ------- |
+  > | 19ms  | 9ms     |
+
+- After caching `IDf` calculation:
+
+  > | debug | release |
+  > | ----- | ------- |
+  > | 140ms | 14ms    |
 
 ### V0.0.1-beta
 
