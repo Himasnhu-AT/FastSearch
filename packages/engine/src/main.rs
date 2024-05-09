@@ -10,6 +10,7 @@ use xml::reader::{EventReader, XmlEvent};
 
 mod model;
 use model::*;
+mod lexer;
 mod server;
 
 fn parse_entire_txt_file(file_path: &Path) -> Result<String, ()> {
@@ -73,7 +74,6 @@ fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
     }
 }
 
-// TODO: Use sqlite3 to store the index
 fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()> {
     println!("Saving {index_path}...");
 
