@@ -9,11 +9,14 @@ async function search(prompt) {
     const json = await response.json();
     results.innerHTML = "";
     for ([path, rank] of json) {
-        let item = document.createElement("span");
+        let item = document.createElement("div");
+        item.style = "margin: 5px; padding: 10px;"
         item.appendChild(document.createTextNode(path));
-        item.appendChild(document.createElement("br"));
+        // item.appendChild(document.createElement("br"));
         results.appendChild(item);
     }
+    console.log(results)
+    console.warn(response)
 }
 
 let query = document.getElementById("query");
