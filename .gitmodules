@@ -1,3 +1,6 @@
+[submodule "packages/snowball"]
+	path = packages/snowball
+	url = https://github.com/snowballstem/snowball.git
 [submodule "packages/engine/docs.gl"]
 	path = packages/engine/docs.gl
-	url = https://github.com/BSVino/docs.gl
+	url = https://github.com/BSVino/docs.gl.git

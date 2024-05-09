@@ -10,7 +10,17 @@ use xml::reader::{EventReader, XmlEvent};
 
 mod model;
 use model::*;
+mod lexer;
 mod server;
+
+fn parse_entire_txt_file(file_path: &Path) -> Result<String, ()> {
+    fs::read_to_string(file_path).map_err(|err| {
+        eprintln!(
+            "ERROR: coult not open file {file_path}: {err}",
+            file_path = file_path.display()
+        );
+    })
+}
 
 fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
     let file = File::open(file_path).map_err(|err| {
@@ -19,7 +29,7 @@ fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
             file_path = file_path.display()
         );
     })?;
-    let er = EventReader::new(file);
+    let er = EventReader::new(BufReader::new(file));
     let mut content = String::new();
     for event in er.into_iter() {
         let event = event.map_err(|err| {
@@ -39,8 +49,32 @@ fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
     Ok(content)
 }
 
-// TODO: Use sqlite3 to store the index
-fn save_model_as_json(model: &Model, index_path: &str) -> Result<(), ()> {
+fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
+    let extension = file_path
+        .extension()
+        .ok_or_else(|| {
+            eprintln!(
+                "ERROR: can't detect file type of {file_path} without extension",
+                file_path = file_path.display()
+            );
+        })?
+        .to_string_lossy();
+    match extension.as_ref() {
+        "xhtml" | "xml" => parse_entire_xml_file(file_path),
+        // TODO: specialized parser for markdown files
+        "txt" | "md" => parse_entire_txt_file(file_path),
+        _ => {
+            eprintln!(
+                "ERROR: can't detect file type of {file_path}: unsupported extension {extension}",
+                file_path = file_path.display(),
+                extension = extension
+            );
+            Err(())
+        }
+    }
+}
+
+fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()> {
     println!("Saving {index_path}...");
 
     let index_file = File::create(index_path).map_err(|err| {
@@ -54,7 +88,11 @@ fn save_model_as_json(model: &Model, index_path: &str) -> Result<(), ()> {
     Ok(())
 }
 
-fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
+fn add_folder_to_model(
+    dir_path: &Path,
+    model: &mut dyn Model,
+    skipped: &mut usize,
+) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
         eprintln!(
             "ERROR: could not open directory {dir_path} for indexing: {err}",
@@ -80,7 +118,7 @@ fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
         })?;
 
         if file_type.is_dir() {
-            add_folder_to_model(&file_path, model)?;
+            add_folder_to_model(&file_path, model, skipped)?;
             continue 'next_file;
         }
 
@@ -88,37 +126,19 @@ fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
 
         println!("Indexing {:?}...", &file_path);
 
-        let content = match parse_entire_xml_file(&file_path) {
+        let content = match parse_entire_file_by_extension(&file_path) {
             Ok(content) => content.chars().collect::<Vec<_>>(),
-            Err(()) => continue 'next_file,
+            Err(()) => {
+                *skipped += 1;
+                continue 'next_file;
+            }
         };
 
-        let mut tf = TermFreq::new();
-        let mut n = 0;
-        for term in Lexer::new(&content) {
-            if let Some(freq) = tf.get_mut(&term) {
-                *freq += 1;
-            } else {
-                tf.insert(term, 1);
-            }
-            n += 1;
-        }
-
-        for t in tf.keys() {
-            if let Some(freq) = model.df.get_mut(t) {
-                *freq += 1;
-            } else {
-                model.df.insert(t.to_string(), 1);
-            }
-        }
-
-        model.tfpd.insert(file_path, (n, tf));
+        model.add_document(file_path, &content)?;
     }
 
     Ok(())
 }
-
-// TODO: Precache as much of tf-idf values as possible during indexing
 
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
@@ -132,7 +152,20 @@ fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
 
-    let subcommand = args.next().ok_or_else(|| {
+    let mut subcommand = None;
+    let mut use_sqlite_mode = false;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--sqlite" => use_sqlite_mode = true,
+            _ => {
+                subcommand = Some(arg);
+                break;
+            }
+        }
+    }
+
+    let subcommand = subcommand.ok_or_else(|| {
         usage(&program);
         eprintln!("ERROR: no subcommand is provided");
     })?;
@@ -144,9 +177,32 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
-            let mut model = Default::default();
-            add_folder_to_model(Path::new(&dir_path), &mut model)?;
-            save_model_as_json(&model, "index.json")?;
+            let mut skipped = 0;
+
+            if use_sqlite_mode {
+                let index_path = "index.db";
+
+                if let Err(err) = fs::remove_file(index_path) {
+                    if err.kind() != std::io::ErrorKind::NotFound {
+                        eprintln!("ERROR: could not delete file {index_path}: {err}");
+                        return Err(());
+                    }
+                }
+
+                let mut model = SqliteModel::open(Path::new(index_path))?;
+                model.begin()?;
+                add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
+                // TODO: implement a special transaction object that implements Drop trait and commits the transaction when it goes out of scope
+                model.commit()?;
+            } else {
+                let index_path = "index.json";
+                let mut model = Default::default();
+                add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
+                save_model_as_json(&model, index_path)?;
+            }
+
+            println!("Skipped {skipped} files.");
+            Ok(())
         }
         "search" => {
             let index_path = args.next().ok_or_else(|| {
@@ -163,17 +219,28 @@ fn entry() -> Result<(), ()> {
                 .chars()
                 .collect::<Vec<_>>();
 
-            let index_file = File::open(&index_path).map_err(|err| {
-                eprintln!("ERROR: could not open index file {index_path}: {err}");
-            })?;
+            if use_sqlite_mode {
+                let model = SqliteModel::open(Path::new(&index_path))?;
 
-            let model: Model = serde_json::from_reader(index_file).map_err(|err| {
-                eprintln!("ERROR: could not parse index file {index_path}: {err}");
-            })?;
+                for (path, rank) in model.search_query(&prompt)?.iter().take(20) {
+                    println!("{path} {rank}", path = path.display());
+                }
+            } else {
+                let index_file = File::open(&index_path).map_err(|err| {
+                    eprintln!("ERROR: could not open index file {index_path}: {err}");
+                })?;
 
-            for (path, rank) in search_query(&model, &prompt).iter().take(20) {
-                println!("{path} {rank}", path = path.display());
+                let model =
+                    serde_json::from_reader::<_, InMemoryModel>(index_file).map_err(|err| {
+                        eprintln!("ERROR: could not parse index file {index_path}: {err}");
+                    })?;
+
+                for (path, rank) in model.search_query(&prompt)?.iter().take(20) {
+                    println!("{path} {rank}", path = path.display());
+                }
             }
+
+            Ok(())
         }
         "serve" => {
             let index_path = args.next().ok_or_else(|| {
@@ -181,26 +248,31 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
             })?;
 
-            let index_file = File::open(&index_path).map_err(|err| {
-                eprintln!("ERROR: could not open index file {index_path}: {err}");
-            })?;
+            let address = args.next().unwrap_or("127.0.0.1:6969".to_string());
 
-            let model: Model = serde_json::from_reader(index_file).map_err(|err| {
-                eprintln!("ERROR: could not parse index file {index_path}: {err}");
-            })?;
+            if use_sqlite_mode {
+                let model = SqliteModel::open(Path::new(&index_path))?;
 
-            let address = args.next().unwrap_or("127.0.0.1:8080".to_string());
+                server::start(&address, &model)
+            } else {
+                let index_file = File::open(&index_path).map_err(|err| {
+                    eprintln!("ERROR: could not open index file {index_path}: {err}");
+                })?;
 
-            return server::start(&address, &model);
+                let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
+                    eprintln!("ERROR: could not parse index file {index_path}: {err}");
+                })?;
+
+                server::start(&address, &model)
+            }
         }
+
         _ => {
             usage(&program);
             eprintln!("ERROR: unknown subcommand {subcommand}");
-            return Err(());
+            Err(())
         }
     }
-
-    Ok(())
 }
 
 fn main() -> ExitCode {
