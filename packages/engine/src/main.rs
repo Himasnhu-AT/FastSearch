@@ -12,6 +12,15 @@ mod model;
 use model::*;
 mod server;
 
+fn parse_entire_txt_file(file_path: &Path) -> Result<String, ()> {
+    fs::read_to_string(file_path).map_err(|err| {
+        eprintln!(
+            "ERROR: coult not open file {file_path}: {err}",
+            file_path = file_path.display()
+        );
+    })
+}
+
 fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
     let file = File::open(file_path).map_err(|err| {
         eprintln!(
@@ -39,6 +48,31 @@ fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
     Ok(content)
 }
 
+fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
+    let extension = file_path
+        .extension()
+        .ok_or_else(|| {
+            eprintln!(
+                "ERROR: can't detect file type of {file_path} without extension",
+                file_path = file_path.display()
+            );
+        })?
+        .to_string_lossy();
+    match extension.as_ref() {
+        "xhtml" | "xml" => parse_entire_xml_file(file_path),
+        // TODO: specialized parser for markdown files
+        "txt" | "md" => parse_entire_txt_file(file_path),
+        _ => {
+            eprintln!(
+                "ERROR: can't detect file type of {file_path}: unsupported extension {extension}",
+                file_path = file_path.display(),
+                extension = extension
+            );
+            Err(())
+        }
+    }
+}
+
 // TODO: Use sqlite3 to store the index
 fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()> {
     println!("Saving {index_path}...");
@@ -54,7 +88,11 @@ fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()>
     Ok(())
 }
 
-fn add_folder_to_model(dir_path: &Path, model: &mut dyn Model) -> Result<(), ()> {
+fn add_folder_to_model(
+    dir_path: &Path,
+    model: &mut dyn Model,
+    skipped: &mut usize,
+) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
         eprintln!(
             "ERROR: could not open directory {dir_path} for indexing: {err}",
@@ -80,7 +118,7 @@ fn add_folder_to_model(dir_path: &Path, model: &mut dyn Model) -> Result<(), ()>
         })?;
 
         if file_type.is_dir() {
-            add_folder_to_model(&file_path, model)?;
+            add_folder_to_model(&file_path, model, skipped)?;
             continue 'next_file;
         }
 
@@ -88,9 +126,12 @@ fn add_folder_to_model(dir_path: &Path, model: &mut dyn Model) -> Result<(), ()>
 
         println!("Indexing {:?}...", &file_path);
 
-        let content = match parse_entire_xml_file(&file_path) {
+        let content = match parse_entire_file_by_extension(&file_path) {
             Ok(content) => content.chars().collect::<Vec<_>>(),
-            Err(()) => continue 'next_file,
+            Err(()) => {
+                *skipped += 1;
+                continue 'next_file;
+            }
         };
 
         model.add_document(file_path, &content)?;
@@ -136,6 +177,8 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
+            let mut skipped = 0;
+
             if use_sqlite_mode {
                 let index_path = "index.db";
 
@@ -148,14 +191,18 @@ fn entry() -> Result<(), ()> {
 
                 let mut model = SqliteModel::open(Path::new(index_path))?;
                 model.begin()?;
-                add_folder_to_model(Path::new(&dir_path), &mut model)?;
-                model.commit()
+                add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
+                // TODO: implement a special transaction object that implements Drop trait and commits the transaction when it goes out of scope
+                model.commit()?;
             } else {
                 let index_path = "index.json";
                 let mut model = Default::default();
-                add_folder_to_model(Path::new(&dir_path), &mut model)?;
-                save_model_as_json(&model, index_path)
+                add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
+                save_model_as_json(&model, index_path)?;
             }
+
+            println!("Skipped {skipped} files.");
+            Ok(())
         }
         "search" => {
             let index_path = args.next().ok_or_else(|| {
