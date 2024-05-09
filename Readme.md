@@ -6,7 +6,7 @@ Fast Search is implementation of end to end google's Search Engines whose core i
 
 ### Demo Working (to be updated)
 
-![demo working](./assets/demo.png)
+![demo working](./assets/workingmodel.mov)
 
 ## Usage
 
