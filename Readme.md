@@ -1,6 +1,6 @@
 # FastSearch
 
-## V0.0.1-beta
+## V0.0.3-beta
 
 Fast Search is implementation of end to end google's Search Engines whose core is written in Rust. The benchmark of the project will be released soon. This repo is built to ensure privatization of search engine technology, such that organizations / individuals can build their own search engine which only parses certain repository's to ensure that the result recieved are from trusted websites (/sources) which are accepted by them.
 
