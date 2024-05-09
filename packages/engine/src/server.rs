@@ -81,12 +81,16 @@ fn serve_request(model: &impl Model, request: Request) -> io::Result<()> {
 
     match (request.method(), request.url()) {
         (Method::Post, "/api/search") => serve_api_search(model, request),
-        (Method::Get, "/index.js") => {
-            serve_static_file(request, "index.js", "text/javascript; charset=utf-8")
-        }
-        (Method::Get, "/") | (Method::Get, "/index.html") => {
-            serve_static_file(request, "index.html", "text/html; charset=utf-8")
-        }
+        (Method::Get, "/index.js") => serve_static_file(
+            request,
+            "./webclient/index.js",
+            "text/javascript; charset=utf-8",
+        ),
+        (Method::Get, "/") | (Method::Get, "/index.html") => serve_static_file(
+            request,
+            "./webclient/index.html",
+            "text/html; charset=utf-8",
+        ),
         _ => serve_404(request),
     }
 }

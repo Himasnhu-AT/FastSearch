@@ -12,7 +12,7 @@ Fast Search is implementation of end to end google's Search Engines whose core i
 
 ### Installation
 
-please visit [Installation Guidelines](./dev-docs/installation.md) to know about ways you can install this repository and get started with it
+please visit [Installation Guidelines](/dev-docs/installation.md) to know about ways you can install this repository and get started with it
 
 ### How to use
 
@@ -27,7 +27,7 @@ please visit [Installation Guidelines](./dev-docs/installation.md) to know about
 
 ## Contribution
 
-To contribute to this repo, follow [contribution guidelines](./dev-docs/contributionGuidelines.md)
+To contribute to this repo, follow [contribution guidelines](/dev-docs/contributionGuidelines.md)
 
 ## License
 
