@@ -35,6 +35,12 @@ pub struct ScraperConfig {
     
     /// Path to domains file
     pub domains_file: String,
+    
+    /// Number of concurrent domains to process
+    pub concurrent_domains: usize,
+    
+    /// Number of concurrent URLs to process per domain
+    pub concurrent_urls: usize,
 }
 
 impl Default for ScraperConfig {
@@ -50,6 +56,8 @@ impl Default for ScraperConfig {
             skip_already_scraped: true,
             database_path: "index.db".to_string(),
             domains_file: "domains.txt".to_string(),
+            concurrent_domains: 5,  // Process 5 domains in parallel
+            concurrent_urls: 3,     // Process 3 URLs per domain in parallel
         }
     }
 }

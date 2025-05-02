@@ -14,12 +14,13 @@ use scraper::{Html, Selector};
 use chrono::Utc;
 use log::{info, debug};
 
+#[derive(Clone)]
 pub struct Crawler {
     config: ScraperConfig,
     client: Client,
     visited_urls: Arc<Mutex<HashSet<String>>>,
     domain_last_request: Arc<Mutex<HashMap<String, Instant>>>,
-    stats: ScraperStats,
+    stats: Arc<Mutex<ScraperStats>>,
 }
 
 impl Crawler {
@@ -43,13 +44,13 @@ impl Crawler {
             client,
             visited_urls: Arc::new(Mutex::new(HashSet::new())),
             domain_last_request: Arc::new(Mutex::new(HashMap::new())),
-            stats: ScraperStats::new(),
+            stats: Arc::new(Mutex::new(ScraperStats::new())),
         })
     }
     
     /// Get a reference to the statistics tracker
-    pub fn stats(&self) -> &ScraperStats {
-        &self.stats
+    pub fn stats(&self) -> ScraperStats {
+        self.stats.lock().unwrap().clone()
     }
     
     /// Process a domain by fetching sitemap
@@ -76,7 +77,7 @@ impl Crawler {
                 }
                 Err(e) => {
                     debug!("Failed to process sitemap {}: {}", sitemap_url, e);
-                    self.stats.record_failure(&sitemap_url);
+                    self.stats.lock().unwrap().record_failure(&sitemap_url);
                 }
             }
         }
@@ -109,7 +110,7 @@ impl Crawler {
         
         let status = response.status();
         if !status.is_success() {
-            self.stats.record_failure(url);
+            self.stats.lock().unwrap().record_failure(url);
             return Err(anyhow::anyhow!("HTTP error: {} for URL: {}", status, url).into());
         }
         
@@ -120,7 +121,7 @@ impl Crawler {
             .unwrap_or("text/html");
             
         if !content_type.contains("text/html") {
-            self.stats.record_failure(url);
+            self.stats.lock().unwrap().record_failure(url);
             return Err(anyhow::anyhow!("Not an HTML page: {} (Content-Type: {})", url, content_type).into());
         }
         
@@ -129,7 +130,7 @@ impl Crawler {
             .with_context(|| format!("Failed to read HTML content from: {}", url))?;
         
         // Record successful download with byte count
-        self.stats.record_success(url, html.len());
+        self.stats.lock().unwrap().record_success(url, html.len());
         
         // Parse the HTML using the parser module
         let document = Html::parse_document(&html);

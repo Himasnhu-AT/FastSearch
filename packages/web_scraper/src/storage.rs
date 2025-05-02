@@ -8,6 +8,7 @@ use serde_json;
 use log::{warn, debug};
 use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
 pub struct Storage {
     // Using `#[allow(dead_code)]` to suppress the warning as we might use this field in the future
     #[allow(dead_code)]
