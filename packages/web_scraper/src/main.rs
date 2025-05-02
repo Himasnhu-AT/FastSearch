@@ -1,75 +1,108 @@
 use anyhow::{Result, Context};
-use std::path::PathBuf;
 use web_scraper::WebScraper;
+use web_scraper::ui::UiServer;
 use std::env;
-use tokio;
+use std::sync::Arc;
+use env_logger::Builder;
+use log::LevelFilter;
+use std::io::Write;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init();
+    // Configure custom logger with timestamp and colors
+    let mut builder = Builder::from_default_env();
+    builder
+        .format(|buf, record| {
+            let level_style = buf.default_styled_level(record.level());
+            writeln!(
+                buf,
+                "[{}] {} {}",
+                chrono::Local::now().format("%H:%M:%S"),
+                level_style,
+                record.args()
+            )
+        })
+        .filter(None, LevelFilter::Info)
+        .init();
     
     let args: Vec<String> = env::args().collect();
     
-    // Parse command-line arguments
-    let mut config_path = None;
-    let mut command = "scrape"; // Default command
-    
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--config" | "-c" => {
-                if i + 1 < args.len() {
-                    config_path = Some(PathBuf::from(&args[i + 1]));
-                    i += 2;
-                } else {
-                    return Err(anyhow::anyhow!("Missing config file path after --config"));
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "scrape" => {
+                let scraper = WebScraper::new(None)
+                    .context("Failed to initialize web scraper")?;
+                
+                println!("┌─────────────────────────────────────────┐");
+                println!("│        STARTING WEB SCRAPER             │");
+                println!("└─────────────────────────────────────────┘");
+                
+                let start_time = std::time::Instant::now();
+                
+                // Run the scraper with progress tracking
+                scraper.scrape_domains().await?;
+                
+                let elapsed = start_time.elapsed();
+                println!("┌─────────────────────────────────────────┐");
+                println!("│        SCRAPING COMPLETED               │");
+                println!("│                                         │");
+                println!("│  Total time: {:.2}s                   │", 
+                    elapsed.as_secs_f64());
+                println!("└─────────────────────────────────────────┘");
+                
+                println!("\nStatistics:");
+                println!("{}", scraper.get_stats());
+            },
+            "stats" => {
+                let scraper = WebScraper::new(None)
+                    .context("Failed to initialize web scraper")?;
+                println!("┌─────────────────────────────────────────┐");
+                println!("│        SCRAPING STATISTICS              │");
+                println!("└─────────────────────────────────────────┘");
+                println!("{}", scraper.get_stats());
+            },
+            "ui" => {
+                let port = if args.len() > 2 { &args[2] } else { "3000" };
+                let addr = format!("127.0.0.1:{}", port);
+                
+                println!("┌─────────────────────────────────────────┐");
+                println!("│        STARTING UI SERVER               │");
+                println!("│                                         │");
+                println!("│  URL: http://{}                │", addr);
+                println!("└─────────────────────────────────────────┘");
+                
+                let scraper = Arc::new(WebScraper::new(None)
+                    .context("Failed to initialize web scraper")?);
+                let ui_server = UiServer::new(scraper, addr);
+                
+                ui_server.ensure_static_files()
+                    .context("Failed to ensure static files for UI server")?;
+                
+                // Convert the Box<dyn Error> to anyhow::Error with a context
+                if let Err(err) = ui_server.run().await {
+                    return Err(anyhow::anyhow!("Failed to run UI server: {}", err));
                 }
             },
-            "scrape" | "search" => {
-                command = args[i].as_str();
-                i += 1;
+            "help" | "-h" | "--help" => {
+                print_usage();
             },
             _ => {
-                i += 1;
+                println!("Unknown command: {}", args[1]);
+                print_usage();
             }
         }
-    }
-    
-    // Create the web scraper instance
-    let scraper = WebScraper::new(config_path.as_deref())
-        .context("Failed to initialize web scraper")?;
-    
-    // Execute the requested command
-    match command {
-        "scrape" => {
-            println!("Starting web scraping process...");
-            scraper.scrape_domains().await?;
-            println!("Web scraping completed successfully!");
-        },
-        "search" => {
-            if args.len() < 3 {
-                return Err(anyhow::anyhow!("Missing search query"));
-            }
-            
-            let query = &args[2];
-            println!("Searching for: {}", query);
-            
-            let results = scraper.search(query)?;
-            
-            println!("Found {} results:", results.len());
-            for (i, page) in results.iter().enumerate() {
-                println!("{}. Title: {}", i + 1, page.title);
-                println!("   URL: {}", page.url);
-                println!("   Description: {}", page.get_description());
-                println!();
-            }
-        },
-        _ => {
-            println!("Usage:");
-            println!("  {} [--config <path>] scrape", args[0]);
-            println!("  {} [--config <path>] search <query>", args[0]);
-        }
+    } else {
+        print_usage();
     }
     
     Ok(())
+}
+
+fn print_usage() {
+    println!("Web Scraper CLI");
+    println!("Usage:");
+    println!("  web_scraper_cli scrape      - Start the scraping process");
+    println!("  web_scraper_cli stats       - Show current statistics");
+    println!("  web_scraper_cli ui [port]   - Start the UI server (default port: 3000)");
+    println!("  web_scraper_cli help        - Show this help message");
 }

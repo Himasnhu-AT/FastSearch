@@ -56,7 +56,7 @@ impl Default for ScraperConfig {
 
 impl ScraperConfig {
     /// Create a new configuration from a file path
-    pub fn from_file(path: &Path) -> anyhow::Result<Self> {
+    pub fn from_file(_path: &Path) -> anyhow::Result<Self> {
         // Simple implementation - in a real app, we'd parse a config file
         // For now, just return the default config
         let config = Self::default();

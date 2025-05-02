@@ -2,4 +2,41 @@
 # Each domain should be on a separate line without http:// or https://
 # Lines starting with # are comments and will be ignored
 
+# General knowledge & reference sites
 wikipedia.org
+wikibooks.org
+wikiversity.org
+stackoverflow.com
+github.io
+developer.mozilla.org
+docs.python.org
+docs.rs
+rust-lang.org
+
+# Technology news and blogs
+techcrunch.com
+arstechnica.com
+theverge.com
+wired.com
+thenextweb.com
+
+# Educational resources
+khanacademy.org
+coursera.org
+mit.edu
+stanford.edu
+openai.com/blog
+
+# Scientific sources
+arxiv.org
+nature.com
+science.org
+ncbi.nlm.nih.gov
+
+# Documentation sites
+kubernetes.io
+docker.com
+tensorflow.org
+pytorch.org
+reactjs.org
+vuejs.org

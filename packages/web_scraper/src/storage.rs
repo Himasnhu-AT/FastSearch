@@ -6,10 +6,13 @@ use std::path::Path;
 use std::fs;
 use serde_json;
 use log::{warn, debug};
+use std::sync::{Arc, Mutex};
 
 pub struct Storage {
+    // Using `#[allow(dead_code)]` to suppress the warning as we might use this field in the future
+    #[allow(dead_code)]
     config: ScraperConfig,
-    connection: Connection,
+    connection: Arc<Mutex<Connection>>,
 }
 
 impl Storage {
@@ -30,7 +33,7 @@ impl Storage {
         
         Ok(Self {
             config: config.clone(),
-            connection,
+            connection: Arc::new(Mutex::new(connection)),
         })
     }
     
@@ -93,8 +96,11 @@ impl Storage {
     
     /// Store a page in the database
     pub fn store_page(&self, page: PageData) -> Result<()> {
+        // Get connection lock
+        let conn = self.connection.lock().unwrap();
+        
         // Check if the URL already exists
-        let url_exists: bool = self.connection.query_row(
+        let url_exists: bool = conn.query_row(
             "SELECT 1 FROM pages WHERE url = ?1 LIMIT 1",
             params![&page.url],
             |_| Ok(true)
@@ -108,7 +114,7 @@ impl Storage {
             let meta_tags_json = serde_json::to_string(&page.meta_tags)?;
             let scraped_at = page.scraped_at.to_rfc3339();
             
-            self.connection.execute(
+            conn.execute(
                 "UPDATE pages SET
                     language = ?1,
                     title = ?2,
@@ -135,7 +141,7 @@ impl Storage {
             let meta_tags_json = serde_json::to_string(&page.meta_tags)?;
             let scraped_at = page.scraped_at.to_rfc3339();
             
-            self.connection.execute(
+            conn.execute(
                 "INSERT INTO pages (
                     url, language, title, meta_tags, canonical_url, content_text, scraped_at
                 ) VALUES (
@@ -158,7 +164,9 @@ impl Storage {
     
     /// Search for pages matching a query
     pub fn search(&self, query: &str) -> Result<Vec<PageData>> {
-        let mut stmt = self.connection.prepare(
+        let conn = self.connection.lock().unwrap();
+        
+        let mut stmt = conn.prepare(
             "SELECT p.url, p.language, p.title, p.meta_tags, p.canonical_url, p.content_text, p.scraped_at
             FROM pages p
             JOIN pages_fts f ON p.rowid = f.rowid
@@ -208,7 +216,9 @@ impl Storage {
     
     /// Get all pages in the database
     pub fn get_all_pages(&self) -> Result<Vec<PageData>> {
-        let mut stmt = self.connection.prepare(
+        let conn = self.connection.lock().unwrap();
+        
+        let mut stmt = conn.prepare(
             "SELECT url, language, title, meta_tags, canonical_url, content_text, scraped_at
             FROM pages"
         )?;
@@ -253,7 +263,9 @@ impl Storage {
     
     /// Get a page by URL
     pub fn get_page_by_url(&self, url: &str) -> Result<Option<PageData>> {
-        let result = self.connection.query_row(
+        let conn = self.connection.lock().unwrap();
+        
+        let result = conn.query_row(
             "SELECT url, language, title, meta_tags, canonical_url, content_text, scraped_at
             FROM pages
             WHERE url = ?1",
