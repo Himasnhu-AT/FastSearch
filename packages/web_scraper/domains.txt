@@ -1,0 +1,5 @@
+# List of domains to scrape
+# Each domain should be on a separate line without http:// or https://
+# Lines starting with # are comments and will be ignored
+
+wikipedia.org
