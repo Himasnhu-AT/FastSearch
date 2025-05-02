@@ -1,46 +1,140 @@
 # FastSearch
 
-> [!Important]
-> Work Under Progress, Not ready for production use
-> #### Things will break, so don't take it to heart :)
+> A high-performance, Rust-based search engine for indexing and searching document collections locally.
 
-## V0.0.3-beta
+## Overview
 
-Fast Search, implementation of end-to-end Google's Search Engines whose core is written in Rust. The benchmark of the project will be released soon. This repo is built to ensure the privatization of search engine technology, such that organizations/individuals can build their own search engine which only parses certain repositories to ensure that the results received are from trusted websites (/sources) that are accepted by them.
+FastSearch is a lightweight, fast search engine implementation whose core is written in Rust. It provides a web interface for easy searching and is designed to index documents from local directories, making it ideal for organizations or individuals who want to search through their own document collections efficiently.
 
-### Demo Working (to be updated)
+The engine now uses SQLite as its default storage backend, which provides better performance and scalability compared to the previous JSON-based storage.
 
-https://github.com/Himasnhu-AT/FastSearch/assets/117301124/82b5edee-4851-453d-98f4-7eefb8e9d011
+![Demo](assets/demo.png)
 
+## Features
 
+- **High Performance**: Core search functionality implemented in Rust
+- **SQLite Backend**: Fast, reliable storage for search indices
+- **Full-Text Search**: TF-IDF based ranking algorithm
+- **Web Interface**: Easy-to-use browser interface for searching
+- **Command-line Tools**: Simple CLI for indexing and searching
+- **Cross-platform**: Works on Windows, macOS, and Linux
 
-## Usage
+## Installation
 
-### Installation
+### Prerequisites
 
-please visit [Installation Guidelines](/dev-docs/installation.md) to know about ways you can install this repository and get started with it
+- [Rust](https://www.rust-lang.org/tools/install) (1.56 or later)
+- [Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) (included with Rust)
 
-### How to use
+### Install from Source
 
-- index the files
-- run the server
-- fetch queries
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Himasnhu-AT/FastSearch.git
+   cd FastSearch
+   ```
 
-## Guidelines
+2. Make the script executable (Unix/macOS):
+   ```bash
+   chmod +x fast_search.sh
+   ```
 
-> TBD
-> Guidelines on usage
+## Quick Start
 
-## Contribution
+### Indexing Documents
 
-To contribute to this repo, follow [contribution guidelines](/dev-docs/contributionGuidelines.md)
+To index a directory of documents:
+
+```bash
+# On Unix/macOS
+./fast_search.sh index /path/to/documents
+
+# On Windows
+fast_search.bat index C:\path\to\documents
+```
+
+This will create an `index.db` file in the `packages/engine` directory.
+
+### Running Search Queries
+
+To search for terms in the indexed documents:
+
+```bash
+# On Unix/macOS
+./fast_search.sh search index.db "your search query"
+
+# On Windows
+fast_search.bat search index.db "your search query"
+```
+
+### Starting the Web Interface
+
+To start the web server with a search interface:
+
+```bash
+# On Unix/macOS
+./fast_search.sh serve index.db
+
+# On Windows
+fast_search.bat serve index.db
+```
+
+Then open your browser and go to http://127.0.0.1:6969/
+
+### Cleaning Up
+
+To remove index files and clean the build:
+
+```bash
+# On Unix/macOS
+./fast_search.sh clean
+
+# On Windows
+fast_search.bat clean
+```
+
+## Advanced Usage
+
+### JSON Storage (Legacy)
+
+If you prefer to use the legacy JSON storage instead of SQLite:
+
+```bash
+# On Unix/macOS
+cd packages/engine
+cargo run --json index /path/to/documents
+
+# On Windows
+cd packages\engine
+cargo run --json index C:\path\to\documents
+```
+
+### Custom Server Address
+
+To run the server on a different address:
+
+```bash
+# On Unix/macOS
+./fast_search.sh serve index.db 192.168.1.100:8080
+
+# On Windows
+fast_search.bat serve index.db 192.168.1.100:8080
+```
+
+## Technical Details
+
+FastSearch uses a Term Frequency-Inverse Document Frequency (TF-IDF) algorithm to rank search results. The search index is stored in a SQLite database, providing fast access and reduced memory usage compared to in-memory or JSON file storage.
+
+For more technical details, see the [technical documentation](dev-docs/tf_idf.md).
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. To contribute to this repo, follow our [contribution guidelines](dev-docs/contributing.md).
 
 ## License
 
-[LICENSE](LICENSE)
+This project is licensed under the [MIT License](LICENSE).
 
-## Special Thanks
+## Changelog
 
-> TBD
-> People, research paper, so on...
-> https://en.wikipedia.org/wiki/Tf%E2%80%93idf
+See [Changelog](dev-docs/changelog.md) for details on recent changes.

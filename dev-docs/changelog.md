@@ -1,3 +1,15 @@
+#### COMMIT (Version to be released)
+
+FIRST COMMIT DATE: May 15, 2024
+
+- Make SQLite the default storage engine (replacing JSON)
+- Add performance improvements with SQLite indices
+- Add convenience scripts (fast_search.sh and fast_search.bat)
+- Update documentation with comprehensive usage examples
+- Implemented search functionality in SQLite model
+
+---
+
 #### Version 0.0.3-beta
 
 DATE: May 9, 2024
