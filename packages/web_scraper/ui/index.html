@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Scraper Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Web Scraper Dashboard</h1>
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="Search content...">
+                <button id="search-button">Search</button>
+            </div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" data-tab="stats">Statistics</button>
+            <button class="tab-button" data-tab="pages">Pages</button>
+        </div>
+
+        <div class="tab-content">
+            <div id="stats" class="tab-pane active">
+                <div class="stats-container">
+                    <h2>Scraper Statistics</h2>
+                    <div id="stats-content" class="stats-content">
+                        <p>Loading statistics...</p>
+                    </div>
+                </div>
+            </div>
+            <div id="pages" class="tab-pane">
+                <div class="pages-container">
+                    <h2>Scraped Pages</h2>
+                    <div id="pages-content" class="pages-content">
+                        <p>Loading pages...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-modal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2 id="modal-title">Page Details</h2>
+                <div id="modal-content">
+                    <p>Loading page details...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
