@@ -71,13 +71,104 @@ impl SqliteModel {
         ",
         )?;
 
+        // Create indices for better performance
+        this.execute("CREATE INDEX IF NOT EXISTS idx_termfreq_term ON TermFreq(term);")?;
+        this.execute("CREATE INDEX IF NOT EXISTS idx_docfreq_term ON DocFreq(term);")?;
+
         Ok(this)
     }
 }
 
 impl Model for SqliteModel {
-    fn search_query(&self, _query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()> {
-        todo!()
+    fn search_query(&self, query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()> {
+        let tokens = Lexer::new(query).collect::<Vec<_>>();
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Get total number of documents
+        let total_docs = {
+            let query = "SELECT COUNT(*) FROM Documents";
+            let log_err = |err| {
+                eprintln!("ERROR: Could not execute query {query}: {err}");
+            };
+            let mut stmt = self.connection.prepare(query).map_err(log_err)?;
+            match stmt.next().map_err(log_err)? {
+                sqlite::State::Row => stmt.read::<i64, _>(0).map_err(log_err)? as usize,
+                sqlite::State::Done => 0,
+            }
+        };
+
+        if total_docs == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Calculate scores for each document
+        let mut results: HashMap<i64, (String, f32)> = HashMap::new();
+
+        for token in &tokens {
+            // Get document frequency for this term
+            let doc_freq = {
+                let query = "SELECT freq FROM DocFreq WHERE term = :term";
+                let log_err = |err| {
+                    eprintln!("ERROR: Could not execute query {query}: {err}");
+                };
+                let mut stmt = self.connection.prepare(query).map_err(log_err)?;
+                stmt.bind_iter::<_, (_, sqlite::Value)>([(":term", token.as_str().into())])
+                    .map_err(log_err)?;
+                match stmt.next().map_err(log_err)? {
+                    sqlite::State::Row => stmt.read::<i64, _>("freq").map_err(log_err)? as f32,
+                    sqlite::State::Done => 1.0, // If term not found, use 1 to avoid division by zero
+                }
+            };
+
+            // Calculate IDF for this term
+            let idf = ((total_docs as f32) / doc_freq).log10();
+
+            // Query all documents containing this term with their term frequency
+            let query = "
+                SELECT d.id, d.path, d.term_count, tf.freq 
+                FROM Documents d 
+                JOIN TermFreq tf ON d.id = tf.doc_id 
+                WHERE tf.term = :term";
+            
+            let log_err = |err| {
+                eprintln!("ERROR: Could not execute query {query}: {err}");
+            };
+            
+            let mut stmt = self.connection.prepare(query).map_err(log_err)?;
+            stmt.bind_iter::<_, (_, sqlite::Value)>([(":term", token.as_str().into())])
+                .map_err(log_err)?;
+            
+            while let sqlite::State::Row = stmt.next().map_err(log_err)? {
+                let doc_id = stmt.read::<i64, _>("id").map_err(log_err)?;
+                let path = stmt.read::<String, _>("path").map_err(log_err)?;
+                let term_count = stmt.read::<i64, _>("term_count").map_err(log_err)? as f32;
+                let term_freq = stmt.read::<i64, _>("freq").map_err(log_err)? as f32;
+                
+                // Calculate TF for this term in this document
+                let tf = term_freq / term_count;
+                
+                // Calculate TF-IDF score for this term in this document
+                let score = tf * idf;
+                
+                // Add to results, summing scores for the same document
+                results
+                    .entry(doc_id)
+                    .and_modify(|(_, existing_score)| *existing_score += score)
+                    .or_insert((path, score));
+            }
+        }
+
+        // Convert results to vector and sort by score
+        let mut result_vec: Vec<(PathBuf, f32)> = results
+            .into_iter()
+            .map(|(_, (path, score))| (PathBuf::from(path), score))
+            .collect();
+        
+        result_vec.sort_by(|(_, score1), (_, score2)| score2.partial_cmp(score1).unwrap());
+        
+        Ok(result_vec)
     }
 
     fn add_document(&mut self, path: PathBuf, content: &[char]) -> Result<(), ()> {

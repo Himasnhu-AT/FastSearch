@@ -1,3 +1,7 @@
+// TODO: search result must consist of clickable links
+// TODO: `index` while `serve`-ing in a separate thread
+// TODO: parse pdf files
+
 use std::env;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
@@ -30,6 +34,7 @@ fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
             file_path = file_path.display()
         );
     })?;
+
     let er = EventReader::new(BufReader::new(file));
     let mut content = String::new();
     for event in er.into_iter() {
@@ -60,6 +65,7 @@ fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
             );
         })?
         .to_string_lossy();
+
     match extension.as_ref() {
         "xhtml" | "xml" => parse_entire_xml_file(file_path),
         // TODO: specialized parser for markdown files
@@ -110,7 +116,6 @@ fn add_folder_to_model(
         })?;
 
         let file_path = file.path();
-
         let file_type = file.file_type().map_err(|err| {
             eprintln!(
                 "ERROR: could not determine type of file {file_path}: {err}",
@@ -124,9 +129,7 @@ fn add_folder_to_model(
         }
 
         // TODO: how does this work with symlinks?
-
         println!("Indexing {:?}...", &file_path);
-
         let content = match parse_entire_file_by_extension(&file_path) {
             Ok(content) => content.chars().collect::<Vec<_>>(),
             Err(()) => {
@@ -144,21 +147,22 @@ fn add_folder_to_model(
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
-    eprintln!("    index <folder>                  index the <folder> and save the index to index.json file");
+    eprintln!("    index <folder>                  index the <folder> and save the index to index.db file (SQLite)");
     eprintln!("    search <index-file> <query>     search <query> within the <index-file>");
     eprintln!("    serve <index-file> [address]    start local HTTP server with Web Interface");
+    eprintln!("Options:");
+    eprintln!("    --json                          use JSON file instead of SQLite database (slower, not recommended)");
 }
 
 fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
-
     let mut subcommand = None;
-    let mut use_sqlite_mode = false;
-
+    let mut use_json_mode = false;
+    
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--sqlite" => use_sqlite_mode = true,
+            "--json" => use_json_mode = true,
             _ => {
                 subcommand = Some(arg);
                 break;
@@ -179,10 +183,8 @@ fn entry() -> Result<(), ()> {
             })?;
 
             let mut skipped = 0;
-
-            if use_sqlite_mode {
+            if !use_json_mode {
                 let index_path = "index.db";
-
                 if let Err(err) = fs::remove_file(index_path) {
                     if err.kind() != std::io::ErrorKind::NotFound {
                         eprintln!("ERROR: could not delete file {index_path}: {err}");
@@ -195,11 +197,13 @@ fn entry() -> Result<(), ()> {
                 add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
                 // TODO: implement a special transaction object that implements Drop trait and commits the transaction when it goes out of scope
                 model.commit()?;
+                println!("Successfully indexed to {index_path} (SQLite database)");
             } else {
                 let index_path = "index.json";
                 let mut model = Default::default();
                 add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
                 save_model_as_json(&model, index_path)?;
+                println!("Successfully indexed to {index_path} (JSON file)");
             }
 
             println!("Skipped {skipped} files.");
@@ -220,9 +224,15 @@ fn entry() -> Result<(), ()> {
                 .chars()
                 .collect::<Vec<_>>();
 
-            if use_sqlite_mode {
-                let model = SqliteModel::open(Path::new(&index_path))?;
+            // Auto-detect index type based on extension if not explicitly specified
+            let is_sqlite = if !use_json_mode {
+                index_path.ends_with(".db") || index_path.ends_with(".sqlite")
+            } else {
+                false
+            };
 
+            if is_sqlite {
+                let model = SqliteModel::open(Path::new(&index_path))?;
                 for (path, rank) in model.search_query(&prompt)?.iter().take(20) {
                     println!("{path} {rank}", path = path.display());
                 }
@@ -230,7 +240,6 @@ fn entry() -> Result<(), ()> {
                 let index_file = File::open(&index_path).map_err(|err| {
                     eprintln!("ERROR: could not open index file {index_path}: {err}");
                 })?;
-
                 let model =
                     serde_json::from_reader::<_, InMemoryModel>(index_file).map_err(|err| {
                         eprintln!("ERROR: could not parse index file {index_path}: {err}");
@@ -250,24 +259,27 @@ fn entry() -> Result<(), ()> {
             })?;
 
             let address = args.next().unwrap_or("127.0.0.1:6969".to_string());
+            
+            // Auto-detect index type based on extension if not explicitly specified
+            let is_sqlite = if !use_json_mode {
+                index_path.ends_with(".db") || index_path.ends_with(".sqlite")
+            } else {
+                false
+            };
 
-            if use_sqlite_mode {
+            if is_sqlite {
                 let model = SqliteModel::open(Path::new(&index_path))?;
-
                 server::start(&address, &model)
             } else {
                 let index_file = File::open(&index_path).map_err(|err| {
                     eprintln!("ERROR: could not open index file {index_path}: {err}");
                 })?;
-
                 let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
                     eprintln!("ERROR: could not parse index file {index_path}: {err}");
                 })?;
-
                 server::start(&address, &model)
             }
         }
-
         _ => {
             usage(&program);
             eprintln!("ERROR: unknown subcommand {subcommand}");
@@ -282,7 +294,3 @@ fn main() -> ExitCode {
         Err(()) => ExitCode::FAILURE,
     }
 }
-
-// TODO: search result must consist of clickable links
-// TODO: `index` while `serve`-ing in a separate thread
-// TODO: parse pdf files
